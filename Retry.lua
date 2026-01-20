@@ -123,30 +123,52 @@ function OGAddonMsg.OnRetryRequest(sender, msgId, data)
     -- Format: [target]:[missing chunks]
     -- Parse target and missing chunks
     
+    DEFAULT_CHAT_FRAME:AddMessage(
+        string.format("[DEBUG] OnRetryRequest: sender=%s msgId=%s data='%s'", sender, msgId, data or "nil"),
+        1, 1, 0
+    )
+    
     local target, missingStr = string.match(data, "^([^:]+):(.*)$")
+    
+    DEFAULT_CHAT_FRAME:AddMessage(
+        string.format("[DEBUG] Parsed: target='%s' missingStr='%s' myName='%s'", 
+            target or "nil", missingStr or "nil", UnitName("player")),
+        1, 1, 0
+    )
+    
     if not target then
         -- Old format without target, process anyway
         missingStr = data
+        DEFAULT_CHAT_FRAME:AddMessage("[DEBUG] No target found, using old format", 1, 1, 0)
     elseif target ~= UnitName("player") then
         -- Not for us, ignore
-        if OGAddonMsg_Config.debug then
-            DEFAULT_CHAT_FRAME:AddMessage(
-                string.format("OGAddonMsg: Ignoring retry request for %s from %s", target, sender),
-                0.5, 0.5, 0.5
-            )
-        end
+        DEFAULT_CHAT_FRAME:AddMessage(
+            string.format("[DEBUG] Ignoring retry request for %s (I am %s)", target, UnitName("player")),
+            1, 0.5, 0
+        )
         return
+    else
+        DEFAULT_CHAT_FRAME:AddMessage("[DEBUG] Target matches, processing retry", 0, 1, 0)
     end
     
     -- Re-enqueue requested chunks with HIGH priority
     
     local entry = OGAddonMsg.retryBuffer[msgId]
     
+    DEFAULT_CHAT_FRAME:AddMessage(
+        string.format("[DEBUG] RetryBuffer lookup for msgId=%s: %s", msgId, entry and "FOUND" or "NOT FOUND"),
+        1, 1, 0
+    )
+    
     if not entry then
         DEFAULT_CHAT_FRAME:AddMessage(
             "OGAddonMsg: Retry request for expired message from " .. sender,
             1, 1, 0
         )
+        DEFAULT_CHAT_FRAME:AddMessage("[DEBUG] Available msgIds in retryBuffer:", 1, 0.5, 0)
+        for id, _ in pairs(OGAddonMsg.retryBuffer) do
+            DEFAULT_CHAT_FRAME:AddMessage(string.format("  - %s", id), 1, 0.5, 0)
+        end
         return
     end
     

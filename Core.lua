@@ -4,14 +4,16 @@
 ]]
 
 -- Version check for multi-copy loading (newest version wins)
-if OGAddonMsg and OGAddonMsg.__version and OGAddonMsg.__version >= 1.0 then
+local LIB_VERSION = 1.1
+
+if OGAddonMsg and OGAddonMsg.__version and OGAddonMsg.__version >= LIB_VERSION then
     -- Newer or equal version already loaded, abort
     return
 end
 
 -- Initialize namespace
 OGAddonMsg = OGAddonMsg or {}
-OGAddonMsg.__version = 1.0
+OGAddonMsg.__version = LIB_VERSION
 
 -- Internal state
 OGAddonMsg.loaded = false
@@ -91,6 +93,12 @@ function OGAddonMsg.OnEnteringWorld()
     -- Retry.lua handles checking for incomplete messages and requesting retries
     if OGAddonMsg.initialized then
         OGAddonMsg.CheckIncompleteMessages()
+        
+        -- Auto-show stats panel for specific players
+        local playerName = UnitName("player")
+        if playerName == "Sunderwhere" or playerName == "Tankmedady" then
+            OGAddonMsg.ShowStatsPanel()
+        end
     end
 end
 

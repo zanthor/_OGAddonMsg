@@ -5,7 +5,7 @@
 
 -- Constants
 local MAX_CHUNK_SIZE = 200  -- Conservative limit for SendAddonMessage
-local HEADER_OVERHEAD = 30  -- Estimated header size
+local HEADER_OVERHEAD = 39  -- 1M + msgId(4) + chunk(4) + total(4) + hash(4) + chunkHash(4) + prefix + tab
 
 -- Initialize reassembly buffer
 OGAddonMsg.reassembly = {}
@@ -59,8 +59,11 @@ function OGAddonMsg.ChunkMessage(prefix, data)
         local endPos = math.min(i * dataPerChunk, string.len(data))
         local chunkData = string.sub(data, startPos, endPos)
         
-        local message = string.format("1M%s%02d%02d%s%s\t%s",
-            msgId, i, totalChunks, hash, prefix, chunkData)
+        -- Compute per-chunk hash for integrity verification
+        local chunkHash = ComputeHash(chunkData)
+        
+        local message = string.format("1M%s%04d%04d%s%s%s\t%s",
+            msgId, i, totalChunks, hash, chunkHash, prefix, chunkData)
         
         table.insert(chunks, message)
     end
@@ -85,13 +88,23 @@ local function ParseMessageHeader(message)
         return version, msgType, msgId, prefix, data, nil, nil, nil
         
     elseif msgType == "M" then
-        -- Multi-chunk: 1M[msgId:4][chunk:2][total:2][hash:4][prefix]\t[data]
+        -- Multi-chunk: 1M[msgId:4][chunk:3][total:3][fullHash:4][chunkHash:4][prefix]\t[data]
+        -- Positions: 1-2=1M, 3-6=msgId, 7-9=chunk, 10-12=total, 13-16=hash, 17-20=chunkHash, 21+=prefix
         local msgId = string.sub(message, 3, 6)
-        local chunkNum = tonumber(string.sub(message, 7, 8))
-        local totalChunks = tonumber(string.sub(message, 9, 10))
-        local hash = string.sub(message, 11, 14)
-        local _, _, prefix, data = string.find(message, "^1M%w%w%w%w%d%d%d%d%w%w%w%w([^%s]+)\t(.*)$")
-        return version, msgType, msgId, prefix, data, chunkNum, totalChunks, hash
+        local chunkNum = tonumber(string.sub(message, 7, 9))
+        -- Multi-chunk: 1M[msgId:4][chunk:4][total:4][fullHash:4][chunkHash:4][prefix]\t[data]
+        local msgId = string.sub(message, 3, 6)
+        local chunkNum = tonumber(string.sub(message, 7, 10))
+        local totalChunks = tonumber(string.sub(message, 11, 14))
+        local hash = string.sub(message, 15, 18)
+        local chunkHash = string.sub(message, 19, 22)
+        
+        -- Find tab separator
+        local tabPos = string.find(message, "\t", 23)
+        local prefix = tabPos and string.sub(message, 23, tabPos - 1) or ""
+        local data = tabPos and string.sub(message, tabPos + 1) or ""
+        
+        return version, msgType, msgId, prefix, data, chunkNum, totalChunks, hash, chunkHash
         
     elseif msgType == "R" then
         -- Retry request: 1R[msgId:4][missing]
@@ -120,7 +133,7 @@ function OGAddonMsg.ProcessIncomingMessage(addonPrefix, message, channel, sender
     OGAddonMsg.stats.bytesReceived = OGAddonMsg.stats.bytesReceived + string.len(message)
     
     -- Parse message header
-    local version, msgType, msgId, prefix, data, chunkNum, totalChunks, hash = ParseMessageHeader(message)
+    local version, msgType, msgId, prefix, data, chunkNum, totalChunks, hash, chunkHash = ParseMessageHeader(message)
     
     if not version or version ~= "1" then
         if OGAddonMsg_Config.debug then
@@ -142,7 +155,7 @@ function OGAddonMsg.ProcessIncomingMessage(addonPrefix, message, channel, sender
     elseif msgType == "M" then
         -- Multi-chunk message - store and reassemble
         OGAddonMsg.stats.chunksReceived = OGAddonMsg.stats.chunksReceived + 1
-        OGAddonMsg.OnChunkReceived(sender, msgId, chunkNum, totalChunks, hash, prefix, data, channel)
+        OGAddonMsg.OnChunkReceived(sender, msgId, chunkNum, totalChunks, hash, chunkHash, prefix, data, channel)
         
     elseif msgType == "R" then
         -- Retry request
@@ -150,8 +163,8 @@ function OGAddonMsg.ProcessIncomingMessage(addonPrefix, message, channel, sender
     end
 end
 
-function OGAddonMsg.OnChunkReceived(sender, msgId, chunkNum, totalChunks, hash, prefix, data, channel)
-    -- Store chunk in reassembly buffer
+function OGAddonMsg.OnChunkReceived(sender, msgId, chunkNum, totalChunks, hash, chunkHash, prefix, data, channel)
+    -- Initialize reassembly buffer first (before validation)
     local entry = OGAddonMsg.reassembly[msgId]
     
     if not entry then
@@ -164,9 +177,33 @@ function OGAddonMsg.OnChunkReceived(sender, msgId, chunkNum, totalChunks, hash, 
             hash = hash,
             chunks = {},
             receivedCount = 0,
-            firstReceived = GetTime()
+            firstReceived = GetTime(),
+            retryAttempts = {}
         }
         OGAddonMsg.reassembly[msgId] = entry
+    end
+    
+    -- Hash verification with detailed debugging
+    if chunkHash then
+        local computedChunkHash = ComputeHash(data)
+        if computedChunkHash ~= chunkHash then
+            -- Detailed debug output
+            DEFAULT_CHAT_FRAME:AddMessage(
+                string.format("[HASH FAIL] Chunk %d/%d msgId=%s", chunkNum, totalChunks, msgId),
+                1, 0, 0
+            )
+            DEFAULT_CHAT_FRAME:AddMessage(
+                string.format("  Expected: %s, Got: %s", chunkHash, computedChunkHash),
+                1, 0.5, 0
+            )
+            DEFAULT_CHAT_FRAME:AddMessage(
+                string.format("  Data length: %d, First 20 bytes: %s", 
+                    string.len(data), string.sub(data, 1, 20)),
+                1, 0.5, 0
+            )
+            OGAddonMsg.stats.failures = OGAddonMsg.stats.failures + 1
+            -- Don't return - accept the chunk anyway and let full message hash catch corruption
+        end
     end
     
     -- Store chunk if not duplicate
@@ -174,6 +211,15 @@ function OGAddonMsg.OnChunkReceived(sender, msgId, chunkNum, totalChunks, hash, 
         entry.chunks[chunkNum] = data
         entry.receivedCount = entry.receivedCount + 1
         entry.lastReceived = GetTime()
+        
+        -- Debug completion check
+        if entry.receivedCount == entry.totalChunks then
+            DEFAULT_CHAT_FRAME:AddMessage(
+                string.format("[DEBUG] All %d chunks received for %s, calling CompleteMessage",
+                    entry.totalChunks, msgId),
+                0, 1, 1
+            )
+        end
         
         if OGAddonMsg_Config.debug then
             DEFAULT_CHAT_FRAME:AddMessage(
@@ -183,37 +229,56 @@ function OGAddonMsg.OnChunkReceived(sender, msgId, chunkNum, totalChunks, hash, 
         end
     end
     
+    -- Debug before completion check
+    DEFAULT_CHAT_FRAME:AddMessage(
+        string.format("[DEBUG] OnChunkReceived END: msgId=%s, receivedCount=%d, totalChunks=%d",
+            msgId, entry.receivedCount, entry.totalChunks),
+        1, 1, 0
+    )
+    
     -- Check if complete
     if entry.receivedCount == entry.totalChunks then
+        DEFAULT_CHAT_FRAME:AddMessage("[DEBUG] CALLING CompleteMessage", 0, 1, 0)
         OGAddonMsg.CompleteMessage(msgId, entry)
+    else
+        DEFAULT_CHAT_FRAME:AddMessage(
+            string.format("[DEBUG] NOT COMPLETE: %d/%d chunks", entry.receivedCount, entry.totalChunks),
+            1, 0.5, 0
+        )
     end
 end
 
 function OGAddonMsg.CompleteMessage(msgId, entry)
+    -- Verify all chunks present before concatenation
+    for i = 1, entry.totalChunks do
+        if not entry.chunks[i] then
+            DEFAULT_CHAT_FRAME:AddMessage(
+                string.format("OGAddonMsg: Incomplete message %s, missing chunk %d/%d",
+                    msgId, i, entry.totalChunks),
+                1, 0.5, 0
+            )
+            return
+        end
+    end
+    
     -- Concatenate all chunks
     local fullData = ""
     for i = 1, entry.totalChunks do
         fullData = fullData .. entry.chunks[i]
     end
     
-    -- Verify hash
+    -- Verify full message hash
     local computedHash = ComputeHash(fullData)
     if computedHash ~= entry.hash then
-        if OGAddonMsg_Config.debug then
-            DEFAULT_CHAT_FRAME:AddMessage(
-                string.format("OGAddonMsg: Hash mismatch for %s (expected %s, got %s)", 
-                    msgId, entry.hash, computedHash),
-                1, 0, 0
-            )
-        end
-        
-        -- Request retry for all chunks
-        OGAddonMsg.SendRetryRequest(entry.sender, msgId, nil, entry.channel)
-        OGAddonMsg.stats.failures = OGAddonMsg.stats.failures + 1
+        -- With per-chunk hashing, this should only happen if chunk order is wrong
+        -- Don't auto-retry large messages - log and clean up instead
         DEFAULT_CHAT_FRAME:AddMessage(
-            string.format("OGAddonMsg: Hash failure (total: %d)", OGAddonMsg.stats.failures),
+            string.format("OGAddonMsg: Hash failure for %s (expected %s, got %s) - per-chunk verification should have caught this",
+                msgId, entry.hash, computedHash),
             1, 0, 0
         )
+        OGAddonMsg.stats.failures = OGAddonMsg.stats.failures + 1
+        OGAddonMsg.reassembly[msgId] = nil
         return
     end
     
@@ -251,7 +316,9 @@ function OGAddonMsg.CleanupReassemblyBuffer()
     local timeout = OGAddonMsg_Config.timeout
     
     for msgId, entry in pairs(OGAddonMsg.reassembly) do
-        if entry.firstReceived and (now - entry.firstReceived) > timeout then
+        -- Use lastReceived instead of firstReceived - timeout should be since LAST activity
+        local lastActivity = entry.lastReceived or entry.firstReceived
+        if lastActivity and (now - lastActivity) > timeout then
             -- Timed out
             if OGAddonMsg_Config.debug then
                 DEFAULT_CHAT_FRAME:AddMessage(
