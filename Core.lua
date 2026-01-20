@@ -95,6 +95,16 @@ function OGAddonMsg.OnEnteringWorld()
 end
 
 function OGAddonMsg.OnAddonMessage(prefix, message, channel, sender)
+    -- Only process messages with our prefix
+    if prefix ~= "OGAM" then
+        return
+    end
+    
+    -- Ignore messages from ourselves
+    if sender == UnitName("player") then
+        return
+    end
+    
     -- Chunker.lua handles parsing and reassembly
     if OGAddonMsg.initialized then
         OGAddonMsg.ProcessIncomingMessage(prefix, message, channel, sender)
@@ -114,6 +124,9 @@ function OGAddonMsg.OnUpdate(elapsed)
     
     -- Retry.lua handles cleanup of expired retry buffer entries
     OGAddonMsg.CleanupRetryBuffer()
+    
+    -- Retry.lua handles cleanup of old duplicate hashes
+    OGAddonMsg.CleanupDuplicateHashes()
     
     -- Chunker.lua handles timeout of incomplete reassembly entries
     OGAddonMsg.CleanupReassemblyBuffer()

@@ -11,4 +11,6 @@ Chunker.lua
 Queue.lua
 Retry.lua
 Handlers.lua
+API.lua
+StatsPanel.lua
 Commands.lua

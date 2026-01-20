@@ -98,13 +98,7 @@
   })
   ```
 
-### 7. Compression (Optional)
-- **Automatic compression** for messages > 500 bytes
-- **Configurable threshold:** `/ogmsg compressmin <bytes>`
-- **Algorithm:** Simple run-length encoding (compatible with Lua 5.0)
-- **Transparent** - Receiver auto-detects and decompresses
-
-### 8. Channel Management
+### 7. Channel Management
 - **Auto-detect best channel:**
   1. RAID (if in raid)
   2. PARTY (if in party)
@@ -223,13 +217,14 @@
 
 ```
 1. Addon calls: OGAddonMsg.Send("RAID", nil, "OGRH_SYNC", largeData)
-2. Compress if > threshold
-3. Chunk into 200-byte segments
-4. Generate message ID and chunk headers
-5. Enqueue chunks by priority
-6. Throttler sends chunks over time
-7. Store in retry buffer (60s)
-8. Call onSuccess callback when all chunks sent
+```
+1. Validate data and prefix
+2. Chunk into 200-byte segments
+3. Generate message ID and chunk headers
+4. Enqueue chunks by priority
+5. Throttler sends chunks over time
+6. Store in retry buffer (60s)
+7. Call onSuccess callback when all chunks sent
 ```
 
 ### Data Flow: Receiving a Chunked Message
@@ -240,9 +235,8 @@
 3. Store chunk in reassembly buffer
 4. If all chunks received:
    a. Verify hash
-   b. Decompress if needed
-   c. Dispatch to registered handlers
-   d. Call sender's callback (if local)
+   b. Dispatch to registered handlers
+   c. Call sender's callback (if local)
 5. If incomplete after timeout:
    a. Request retransmission
    b. Or discard and notify failure
@@ -470,11 +464,6 @@ function CompleteMessage(msgId, entry)
         return
     end
     
-    -- Decompress if needed
-    if IsCompressed(fullData) then
-        fullData = Decompress(fullData)
-    end
-    
     -- Dispatch to handlers
     DispatchToHandlers(entry.sender, entry.prefix, fullData)
     
@@ -619,7 +608,6 @@ Send a message through the addon communication system.
   - `onSuccess` (function): Called when message fully sent
   - `onFailure` (function(reason)): Called on send failure
   - `onProgress` (function(sent, total)): Called for chunked messages
-  - `compress` (boolean): Force compression on/off (default: auto)
 
 **Returns:**
 - `msgId` (string): Unique message ID for tracking
@@ -714,7 +702,6 @@ Set a configuration value.
 - `"timeout"` (number): Timeout for incomplete receives (default: 90)
 - `"maxRate"` (number): Max messages per second (default: 8)
 - `"burstLimit"` (number): Max burst messages (default: 15)
-- `"compressMin"` (number): Min bytes to trigger compression (default: 500)
 - `"debug"` (boolean): Enable debug logging (default: false)
 
 **Example:**
@@ -800,11 +787,6 @@ All commands start with `/ogmsg` or `/ogaddonmsg`:
 /ogmsg burstlimit <count>      - Max burst messages (default: 15)
 ```
 
-#### Compression Configuration
-```
-/ogmsg compressmin <bytes>     - Min bytes to trigger compression (default: 500)
-```
-
 #### Statistics & Diagnostics
 ```
 /ogmsg stats                   - Show current statistics
@@ -838,7 +820,6 @@ OGAddonMsg_Config = {
     timeout = 90,
     maxRate = 8,
     burstLimit = 15,
-    compressMin = 500,
     debug = false
 }
 ```
@@ -1200,7 +1181,6 @@ Target performance metrics:
 - ✅ Throttling engine
 - ✅ Latency monitoring/warnings
 - ✅ Statistics tracking
-- ✅ Compression
 
 ### Phase 4: Polish
 - ✅ Full slash command suite

@@ -22,6 +22,12 @@ SlashCmdList["OGADDONMSG"] = function(msg)
     elseif cmd == "stats" then
         if args == "reset" then
             OGAddonMsg.ResetStats()
+        elseif args == "show" then
+            OGAddonMsg.ShowStatsPanel()
+        elseif args == "hide" then
+            OGAddonMsg.HideStatsPanel()
+        elseif args == "" or args == "toggle" then
+            OGAddonMsg.ToggleStatsPanel()
         else
             OGAddonMsg.ShowStats()
         end
@@ -121,18 +127,6 @@ SlashCmdList["OGADDONMSG"] = function(msg)
             DEFAULT_CHAT_FRAME:AddMessage("Usage: /ogmsg burstlimit <count>", 1, 1, 0)
         end
         
-    elseif cmd == "compressmin" then
-        local value = tonumber(args)
-        if value and value >= 0 then
-            OGAddonMsg.SetConfig("compressMin", value)
-            DEFAULT_CHAT_FRAME:AddMessage(
-                string.format("OGAddonMsg: Compression min set to %d bytes", value),
-                0.5, 1, 0.5
-            )
-        else
-            DEFAULT_CHAT_FRAME:AddMessage("Usage: /ogmsg compressmin <bytes>", 1, 1, 0)
-        end
-        
     else
         DEFAULT_CHAT_FRAME:AddMessage("Unknown command: " .. cmd, 1, 0, 0)
         DEFAULT_CHAT_FRAME:AddMessage("Type /ogmsg help for commands", 1, 1, 0)
@@ -142,7 +136,8 @@ end
 function OGAddonMsg.ShowHelp()
     DEFAULT_CHAT_FRAME:AddMessage("=== OGAddonMsg Commands ===", 0.5, 1, 0.5)
     DEFAULT_CHAT_FRAME:AddMessage("/ogmsg status - Show queue status and config", 1, 1, 1)
-    DEFAULT_CHAT_FRAME:AddMessage("/ogmsg stats - Show statistics", 1, 1, 1)
+    DEFAULT_CHAT_FRAME:AddMessage("/ogmsg stats - Toggle stats panel", 1, 1, 1)
+    DEFAULT_CHAT_FRAME:AddMessage("/ogmsg stats show|hide - Show/hide stats panel", 1, 1, 1)
     DEFAULT_CHAT_FRAME:AddMessage("/ogmsg stats reset - Reset statistics", 1, 1, 1)
     DEFAULT_CHAT_FRAME:AddMessage("/ogmsg debug on|off - Toggle debug mode", 1, 1, 1)
     DEFAULT_CHAT_FRAME:AddMessage(" ", 1, 1, 1)
@@ -154,7 +149,6 @@ function OGAddonMsg.ShowHelp()
     DEFAULT_CHAT_FRAME:AddMessage("/ogmsg timeout <sec> - Reassembly timeout", 1, 1, 1)
     DEFAULT_CHAT_FRAME:AddMessage("/ogmsg maxrate <msgs/sec> - Throttling rate", 1, 1, 1)
     DEFAULT_CHAT_FRAME:AddMessage("/ogmsg burstlimit <count> - Burst limit", 1, 1, 1)
-    DEFAULT_CHAT_FRAME:AddMessage("/ogmsg compressmin <bytes> - Compression threshold", 1, 1, 1)
 end
 
 function OGAddonMsg.ShowStatus()
@@ -189,6 +183,7 @@ function OGAddonMsg.ShowStats()
     DEFAULT_CHAT_FRAME:AddMessage(string.format("Retries: %d requested, %d sent",
         stats.retriesRequested, stats.retriesSent), 1, 1, 1)
     DEFAULT_CHAT_FRAME:AddMessage(string.format("Failures: %d", stats.failures), 1, 1, 1)
+    DEFAULT_CHAT_FRAME:AddMessage(string.format("Ignored: %d", stats.ignored), 1, 1, 1)
     DEFAULT_CHAT_FRAME:AddMessage(string.format("Queue: %d current, %d max",
         stats.queueDepth, stats.queueDepthMax), 1, 1, 1)
 end

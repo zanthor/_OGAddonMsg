@@ -13,7 +13,6 @@ local DEFAULT_CONFIG = {
     timeout = 90,           -- When to give up on incomplete receives
     maxRate = 8,            -- Max messages per second
     burstLimit = 15,        -- Max burst messages
-    compressMin = 500,      -- Min bytes to trigger compression
     debug = false           -- Debug logging
 }
 
@@ -31,8 +30,13 @@ function OGAddonMsg.InitializeConfig()
         end
     end
     
-    -- Initialize statistics
-    OGAddonMsg.stats = {
+    -- Initialize statistics (preserve existing stats object to maintain references)
+    if not OGAddonMsg.stats then
+        OGAddonMsg.stats = {}
+    end
+    
+    -- Set default values for any missing stat fields
+    local defaultStats = {
         messagesSent = 0,
         messagesReceived = 0,
         bytesSent = 0,
@@ -43,10 +47,17 @@ function OGAddonMsg.InitializeConfig()
         retriesRequested = 0,
         retriesSent = 0,
         failures = 0,
+        ignored = 0,
         queueDepth = 0,
         queueDepthMax = 0,
         queueTimeEstimate = 0
     }
+    
+    for key, value in pairs(defaultStats) do
+        if OGAddonMsg.stats[key] == nil then
+            OGAddonMsg.stats[key] = value
+        end
+    end
     
     if OGAddonMsg_Config.debug then
         DEFAULT_CHAT_FRAME:AddMessage("OGAddonMsg: Config initialized", 0.5, 0.5, 1)
@@ -90,6 +101,7 @@ function OGAddonMsg.ResetStats()
     OGAddonMsg.stats.retriesRequested = 0
     OGAddonMsg.stats.retriesSent = 0
     OGAddonMsg.stats.failures = 0
+    OGAddonMsg.stats.ignored = 0
     OGAddonMsg.stats.queueDepthMax = 0
     
     DEFAULT_CHAT_FRAME:AddMessage("OGAddonMsg: Statistics reset", 0.5, 1, 0.5)

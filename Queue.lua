@@ -82,23 +82,43 @@ function OGAddonMsg.ProcessQueue(elapsed)
         return
     end
     
-    -- TODO: Actually send the message via SendAddonMessage
-    -- For now, just simulate
-    if OGAddonMsg_Config.debug then
-        DEFAULT_CHAT_FRAME:AddMessage("OGAddonMsg: TX -> " .. (item.channel or "AUTO"), 0.5, 1, 0.5)
-    end
+    -- Send via WoW API
+    -- SendAddonMessage(prefix, message, channel, target)
+    local success = pcall(SendAddonMessage, "OGAM", item.msg, item.channel, item.target)
     
-    -- Update throttling state
-    lastSendTime = now
-    burstCount = burstCount + 1
-    
-    -- Update stats
-    OGAddonMsg.stats.messagesSent = OGAddonMsg.stats.messagesSent + 1
-    OGAddonMsg.stats.bytesSent = OGAddonMsg.stats.bytesSent + string.len(item.msg)
-    
-    -- Callback
-    if item.callbacks and item.callbacks.onSuccess then
-        item.callbacks.onSuccess()
+    if success then
+        if OGAddonMsg_Config.debug then
+            DEFAULT_CHAT_FRAME:AddMessage(
+                string.format("OGAddonMsg: TX -> %s (%d bytes)", 
+                    item.channel or "AUTO", string.len(item.msg)),
+                0.5, 1, 0.5
+            )
+        end
+        
+        -- Update throttling state
+        lastSendTime = now
+        burstCount = burstCount + 1
+        
+        -- Update stats
+        OGAddonMsg.stats.messagesSent = OGAddonMsg.stats.messagesSent + 1
+        OGAddonMsg.stats.bytesSent = OGAddonMsg.stats.bytesSent + string.len(item.msg)
+        OGAddonMsg.stats.chunksSent = OGAddonMsg.stats.chunksSent + 1
+        
+        -- Callback
+        if item.callbacks and item.callbacks.onSuccess then
+            item.callbacks.onSuccess()
+        end
+    else
+        -- Send failed
+        OGAddonMsg.stats.failures = OGAddonMsg.stats.failures + 1
+        
+        if OGAddonMsg_Config.debug then
+            DEFAULT_CHAT_FRAME:AddMessage("OGAddonMsg: Send failed", 1, 0, 0)
+        end
+        
+        if item.callbacks and item.callbacks.onFailure then
+            item.callbacks.onFailure("Send failed")
+        end
     end
     
     -- Update queue stats
