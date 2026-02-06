@@ -93,12 +93,6 @@ function OGAddonMsg.OnEnteringWorld()
     -- Retry.lua handles checking for incomplete messages and requesting retries
     if OGAddonMsg.initialized then
         OGAddonMsg.CheckIncompleteMessages()
-        
-        -- Auto-show stats panel for specific players
-        local playerName = UnitName("player")
-        if playerName == "Sunderwhere" or playerName == "Tankmedady" then
-            OGAddonMsg.ShowStatsPanel()
-        end
     end
 end
 
