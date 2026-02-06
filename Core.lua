@@ -80,7 +80,7 @@ end)
 ]]
 function OGAddonMsg.OnLoad()
     OGAddonMsg.loaded = true
-    DEFAULT_CHAT_FRAME:AddMessage("OGAddonMsg v" .. OGAddonMsg.__version .. " loaded", 0.5, 1, 0.5)
+    OGAddonMsg.Msg("OGAddonMsg v" .. OGAddonMsg.__version .. " loaded")
 end
 
 function OGAddonMsg.OnVariablesLoaded()
